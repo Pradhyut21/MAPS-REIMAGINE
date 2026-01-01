@@ -10,9 +10,6 @@ import 'package:wayfinder/nav.dart';
 import 'package:wayfinder/widgets/app_background.dart';
 import 'package:flutter/foundation.dart';
 import 'package:wayfinder/openai/openai_config.dart';
-import 'package:wayfinder/services/nominatim_service.dart';
-import 'package:wayfinder/models/map_suggestion.dart';
-import 'dart:async';
 
 class AIAssistantPage extends StatefulWidget {
   const AIAssistantPage({super.key});
@@ -27,13 +24,6 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
   final LocationService _locationService = LocationService();
   final TextEditingController _commandController = TextEditingController();
   final OpenAIClient _ai = OpenAIClient(model: 'gpt-4o');
-  final NominatimService _nominatim = NominatimService();
-  final TextEditingController _placeController = TextEditingController();
-  Timer? _searchDebounce;
-  List<MapSuggestion> _placeResults = [];
-  MapSuggestion? _selectedPlace;
-  int _radius = 500;
-  bool _creatingAlert = false;
   
   List<TravelAlert> _alerts = [];
   bool _isListening = false;
@@ -118,38 +108,27 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
       // Geofence command pattern: "alert me near <place> within <meters>"
       final lowerCommand = command.toLowerCase();
       final match = RegExp(r'near\s+(.+?)\s+within\s+(\d+)').firstMatch(lowerCommand);
-      if (lowerCommand.contains('alert') && lowerCommand.contains('near') && match != null) {
+      if (lowerCommand.contains('alert') && lowerCommand.contains('near') && match != null && _userLat != null && _userLon != null) {
         final placeName = match.group(1)!;
         final distance = int.tryParse(match.group(2)!) ?? 500;
-        debugPrint('Geofence creation via AI for "$placeName" within ${distance}m');
-        final results = await _nominatim.search(placeName, limit: 1);
-        if (results.isNotEmpty) {
-          final target = results.first;
-          final alert = TravelAlert(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            userId: 'user1',
-            placeName: target.title,
-            latitude: target.lat,
-            longitude: target.lon,
-            radiusMeters: distance.toDouble(),
-            isActive: true,
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-          );
-          await _alertService.addAlert(alert);
-          await _voiceService.speak('I will notify you when you are close to ${target.title}');
-          _loadData();
-          if (mounted) {
-            setState(() {
-              _messages.add(_ChatMessage(role: _Role.assistant, content: 'Done. I created an alert for "${target.title}" within ${alert.radiusMeters.toInt()} meters. I\'ll notify you when you\'re nearby.'));
-            });
-          }
-        } else {
-          if (mounted) {
-            setState(() {
-              _messages.add(_ChatMessage(role: _Role.assistant, content: 'I couldn\'t find "$placeName". Try a more specific name.'));
-            });
-          }
+        final alert = TravelAlert(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          userId: 'user1',
+          placeName: placeName,
+          latitude: _userLat!,
+          longitude: _userLon!,
+          radiusMeters: distance.toDouble(),
+          isActive: true,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+        await _alertService.addAlert(alert);
+        await _voiceService.speak('I will notify you when you are close to $placeName');
+        _loadData();
+        if (mounted) {
+          setState(() {
+            _messages.add(_ChatMessage(role: _Role.assistant, content: 'Done. I created an alert for "$placeName" within ${alert.radiusMeters.toInt()} meters. I\'ll notify you when you\'re nearby.'));
+          });
         }
       } else {
         // General AI chat fallback using OpenAI
@@ -186,59 +165,6 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
     }
   }
 
-  void _onPlaceQueryChanged(String query) {
-    _selectedPlace = null;
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 350), () async {
-      try {
-        final results = await _nominatim.search(query, limit: 6);
-        if (!mounted) return;
-        setState(() => _placeResults = results);
-      } catch (e) {
-        debugPrint('Place search failed: $e');
-      }
-    });
-  }
-
-  Future<void> _createArrivalAlert() async {
-    if (_selectedPlace == null) return;
-    setState(() => _creatingAlert = true);
-    try {
-      final alert = TravelAlert(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        userId: 'user1',
-        placeName: _selectedPlace!.title,
-        latitude: _selectedPlace!.lat,
-        longitude: _selectedPlace!.lon,
-        radiusMeters: _radius.toDouble(),
-        isActive: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-      await _alertService.addAlert(alert);
-      await _loadData();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Arrival alert set for ${_selectedPlace!.title} (${_radius}m)'), backgroundColor: AppColors.golden),
-      );
-      setState(() {
-        _placeController.clear();
-        _placeResults = [];
-        _selectedPlace = null;
-        _radius = 500;
-      });
-    } catch (e) {
-      debugPrint('Create alert failed: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not create alert'), backgroundColor: AppColors.emergencyRed),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _creatingAlert = false);
-    }
-  }
-
   Future<void> _clearAlerts() async {
     await _alertService.clearAllAlerts('user1');
     _loadData();
@@ -255,8 +181,6 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
   @override
   void dispose() {
     _commandController.dispose();
-    _placeController.dispose();
-    _searchDebounce?.cancel();
     _voiceService.dispose();
     super.dispose();
   }
@@ -310,105 +234,6 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
                         style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray),
                       ),
                     ],
-                  ),
-                  SizedBox(height: AppSpacing.xl),
-                  // Quick arrival alert creator
-                  Container(
-                    padding: AppSpacing.paddingMd,
-                    decoration: BoxDecoration(
-                      color: AppColors.brownCard,
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          Icon(Icons.notifications_active, color: AppColors.golden),
-                          SizedBox(width: AppSpacing.sm),
-                          Text('Create arrival alert', style: context.textStyles.titleMedium?.copyWith(color: Colors.white)),
-                        ]),
-                        SizedBox(height: AppSpacing.md),
-                        Container(
-                          padding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                          decoration: BoxDecoration(
-                            color: AppColors.darkBrown,
-                            borderRadius: BorderRadius.circular(AppRadius.sm),
-                          ),
-                          child: TextField(
-                            controller: _placeController,
-                            onChanged: _onPlaceQueryChanged,
-                            decoration: InputDecoration(
-                              hintText: 'Search a place (e.g., Orion Mall, T3 Airport)',
-                              hintStyle: context.textStyles.bodyMedium?.copyWith(color: AppColors.lightGray),
-                              border: InputBorder.none,
-                            ),
-                            style: context.textStyles.bodyMedium?.copyWith(color: Colors.white),
-                          ),
-                        ),
-                        if (_placeResults.isNotEmpty) ...[
-                          SizedBox(height: AppSpacing.xs),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.darkBrown,
-                              borderRadius: BorderRadius.circular(AppRadius.sm),
-                            ),
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: _placeResults.length,
-                              itemBuilder: (context, index) {
-                                final s = _placeResults[index];
-                                final selected = _selectedPlace?.title == s.title && _selectedPlace?.lat == s.lat && _selectedPlace?.lon == s.lon;
-                                return ListTile(
-                                  dense: true,
-                                  leading: Icon(selected ? Icons.check_circle : Icons.place, color: selected ? AppColors.golden : Colors.white),
-                                  title: Text(s.title, style: context.textStyles.bodyMedium?.copyWith(color: Colors.white)),
-                                  subtitle: s.subtitle.isEmpty ? null : Text(s.subtitle, style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray)),
-                                  onTap: () => setState(() {
-                                    _selectedPlace = s;
-                                    _placeController.text = s.title;
-                                    _placeResults = [];
-                                  }),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                        SizedBox(height: AppSpacing.md),
-                        Wrap(
-                          spacing: AppSpacing.sm,
-                          runSpacing: AppSpacing.sm,
-                          children: [
-                            for (final r in [100, 200, 300, 500, 800, 1000])
-                              ChoiceChip(
-                                label: Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 4),
-                                  child: Text('${r}m', style: TextStyle(color: _radius == r ? Colors.black : Colors.white)),
-                                ),
-                                selected: _radius == r,
-                                onSelected: (_) => setState(() => _radius = r),
-                                selectedColor: AppColors.golden,
-                                backgroundColor: AppColors.darkBrown,
-                              ),
-                          ],
-                        ),
-                        SizedBox(height: AppSpacing.md),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: (_selectedPlace == null || _creatingAlert) ? null : _createArrivalAlert,
-                            icon: _creatingAlert
-                                ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                                : Icon(Icons.add_alert, color: Colors.black),
-                            label: Text(_creatingAlert ? 'Creating...' : 'Create arrival alert', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.golden,
-                              padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                   SizedBox(height: AppSpacing.xl),
                   Container(

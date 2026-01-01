@@ -54,81 +54,6 @@ class _CollectionsPageState extends State<CollectionsPage> {
     await _load();
   }
 
-  Future<void> _confirmDeleteCollection(Collection c) async {
-    final theme = Theme.of(context);
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: theme.colorScheme.surfaceContainerHighest,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.xl, AppSpacing.md, AppSpacing.lg),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Icon(Icons.delete_forever, color: theme.colorScheme.error),
-              SizedBox(width: AppSpacing.sm),
-              Expanded(child: Text('Delete collection', style: context.textStyles.titleLarge)),
-            ]),
-            SizedBox(height: AppSpacing.sm),
-            Text("This will remove ‘${c.name}’ and unlink its places. Your saved places remain intact.", style: context.textStyles.bodyMedium),
-            SizedBox(height: AppSpacing.lg),
-            Row(children: [
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(foregroundColor: theme.colorScheme.onSurface),
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.close, color: theme.colorScheme.onSurface),
-                    SizedBox(width: 6),
-                    Text('Cancel', style: (context.textStyles.labelLarge ?? const TextStyle()).copyWith(color: theme.colorScheme.onSurface))
-                  ]),
-                ),
-              ),
-              SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.error, foregroundColor: theme.colorScheme.onError),
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.delete_outline, color: theme.colorScheme.onError),
-                    SizedBox(width: 6),
-                    Text('Delete', style: (context.textStyles.labelLarge ?? const TextStyle()).copyWith(color: theme.colorScheme.onError))
-                  ]),
-                ),
-              ),
-            ])
-          ]),
-        );
-      },
-    );
-    if (result == true) {
-      try {
-        await _collectionService.deleteCollection(_userId, c.id);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted ${c.name}')));
-        }
-        await _load();
-      } catch (e) {
-        debugPrint('Failed to delete collection: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete. Please try again.')));
-        }
-      }
-    }
-  }
-
-  Future<void> _removePlace(String collectionId, SavedPlace p) async {
-    try {
-      await _collectionService.removePlaceFromCollection(collectionId: collectionId, savedPlaceId: p.id);
-      await _load();
-    } catch (e) {
-      debugPrint('Failed to remove place from collection: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not remove place')));
-      }
-    }
-  }
-
   @override
   void dispose() {
     _nameController.dispose();
@@ -181,29 +106,15 @@ class _CollectionsPageState extends State<CollectionsPage> {
                                   Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
                                   SizedBox(width: AppSpacing.sm),
                                   Expanded(child: Text(c.name, style: context.textStyles.titleMedium)),
-                                  Container(
-                                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(999)),
-                                    child: Text('${places.length}'),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Delete collection',
-                                    icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
-                                    onPressed: () => _confirmDeleteCollection(c),
-                                  ),
+                                  Text('${places.length}'),
                                 ]),
                                 if (places.isNotEmpty) ...[
                                   SizedBox(height: AppSpacing.sm),
                                   Column(children: places.map((p) => ListTile(
                                         contentPadding: EdgeInsets.zero,
-                                        leading: Icon(Icons.place, color: Theme.of(context).colorScheme.secondary),
+                                        leading: Icon(Icons.place),
                                         title: Text(p.placeName),
                                         subtitle: Text(p.address, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                        trailing: IconButton(
-                                          tooltip: 'Remove from collection',
-                                          icon: Icon(Icons.remove_circle_outline, color: Theme.of(context).colorScheme.tertiary),
-                                          onPressed: () => _removePlace(c.id, p),
-                                        ),
                                       )).toList()),
                                 ],
                               ]),
