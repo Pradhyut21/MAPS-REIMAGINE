@@ -1,0 +1,44 @@
+name: wayfinder
+description: "Navigate your world effortlessly with this voice-enabled map application, offering real-time directions, emergency services, restaurant recommendations, and comprehensive transport information all in one place."
+publish_to: "none"
+version: 1.0.0
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  share_plus: ^12.0.0
+  http: ^1.0.0
+  latlong2: 0.9.1
+  flutter_map: ^8.0.0
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.1.0
+  provider: ^6.1.2
+  go_router: ^16.2.0
+  geolocator: 13.0.4
+  geocoding: ^4.0.0
+  speech_to_text: ^7.0.0
+  flutter_tts: ^4.0.0
+  shared_preferences: ^2.0.0
+  intl: 0.20.2
+  url_launcher: ^6.0.0
+  permission_handler: ^12.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/icons/dreamflow_icon.jpg
+  remove_alpha_ios: true
