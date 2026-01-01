@@ -57,4 +57,63 @@ class OpenAIClient {
       rethrow;
     }
   }
+
+  /// Requests a JSON object response using response_format.json_object.
+  /// Returns a parsed Map. Throws on network errors; returns empty map if JSON
+  /// is malformed.
+  Future<Map<String, dynamic>> chatJson(String prompt, {Map<String, dynamic>? extraSystem}) async {
+    if (endpoint.isEmpty || apiKey.isEmpty) {
+      throw Exception('OpenAI endpoint or API key is not configured');
+    }
+    final uri = Uri.parse(endpoint);
+    final body = {
+      'model': model,
+      'response_format': {'type': 'json_object'},
+      'messages': [
+        {
+          'role': 'system',
+          'content': 'You are a helpful travel assistant. Always return a single JSON object exactly following the requested schema.'
+        },
+        if (extraSystem != null)
+          {
+            'role': 'system',
+            'content': jsonEncode(extraSystem),
+          },
+        {
+          'role': 'user',
+          'content': prompt,
+        }
+      ],
+      'temperature': 0.3,
+    };
+    try {
+      final res = await http.post(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+      if (res.statusCode != 200) {
+        debugPrint('OpenAI ${res.statusCode}: ${res.body}');
+        throw Exception('OpenAI error ${res.statusCode}');
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      final choices = data['choices'] as List?;
+      if (choices == null || choices.isEmpty) return <String, dynamic>{};
+      final msg = choices.first['message'] as Map<String, dynamic>;
+      final content = (msg['content'] as String?) ?? '{}';
+      try {
+        final parsed = jsonDecode(content) as Map<String, dynamic>;
+        return parsed;
+      } catch (e) {
+        debugPrint('OpenAI chatJson parse failed: $e');
+        return <String, dynamic>{};
+      }
+    } catch (e) {
+      debugPrint('OpenAI chatJson failed: $e');
+      rethrow;
+    }
+  }
 }

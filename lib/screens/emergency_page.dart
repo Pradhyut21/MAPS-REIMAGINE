@@ -7,6 +7,7 @@ import 'package:wayfinder/services/place_service.dart';
 import 'package:wayfinder/services/location_service.dart';
 import 'package:wayfinder/screens/home_page.dart';
 import 'package:wayfinder/widgets/live_image_header.dart';
+import 'package:wayfinder/nav.dart';
 import 'package:wayfinder/widgets/app_background.dart';
 
 class EmergencyPage extends StatefulWidget {
@@ -384,15 +385,12 @@ class EmergencyPlaceCard extends StatelessWidget {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      final url = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${place.latitude},${place.longitude}');
-                      launchUrl(url, mode: LaunchMode.externalApplication);
+                      final t = Uri.encodeComponent(place.name);
+                      context.push('${AppRoutes.map}?lat=${place.latitude}&lon=${place.longitude}&title=$t&autoroute=true');
                     },
                     icon: Icon(Icons.directions, color: Colors.white, size: 16),
                     label: Text('Directions', style: TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.darkBrown,
-                      padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                    ),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.darkBrown, padding: EdgeInsets.symmetric(vertical: AppSpacing.sm)),
                   ),
                 ),
               ],

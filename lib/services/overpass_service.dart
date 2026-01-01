@@ -71,4 +71,54 @@ class OverpassService {
       return null;
     }
   }
+
+  /// Fetches bus route refs/names near a coordinate, optionally restricted to a
+  /// specific network/operator tag (e.g., BMTC, DTC). Returns a set of route refs.
+  Future<Set<String>> getBusRouteRefsNear(double lat, double lon, {String? networkOrOperator, int radiusMeters = 4000}) async {
+    // Overpass: find relations of route=bus with network/operator ~ given tag
+    // Regex match for network or operator to be flexible.
+    String filter;
+    if (networkOrOperator != null && networkOrOperator.trim().isNotEmpty) {
+      final escaped = networkOrOperator.replaceAll('"', '\\"');
+      filter = '('
+          'rel["route"="bus"]["network"~"$escaped",i](around:$radiusMeters,$lat,$lon);'
+          'rel["route"="bus"]["operator"~"$escaped",i](around:$radiusMeters,$lat,$lon);'
+          ')';
+    } else {
+      filter = 'rel["route"="bus"](around:$radiusMeters,$lat,$lon);';
+    }
+    final q = '[out:json][timeout:20];$filter;out tags 100;';
+    try {
+      final res = await http.post(Uri.parse(_endpoint), body: {'data': q}, headers: {'User-Agent': 'wayfinder-app/1.0 (dreamflow)'});
+      if (res.statusCode != 200) {
+        debugPrint('Overpass route refs ${res.statusCode}: ${res.body}');
+        return <String>{};
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      final elements = (data['elements'] as List?) ?? [];
+      final set = <String>{};
+      for (final e in elements) {
+        final tags = (e['tags'] as Map?) ?? {};
+        final ref = (tags['ref'] as String?)?.trim();
+        if (ref != null && ref.isNotEmpty) set.add(ref);
+      }
+      return set;
+    } catch (e) {
+      debugPrint('Overpass route refs error: $e');
+      return <String>{};
+    }
+  }
+
+  /// Convenience: route refs that appear near BOTH origin and destination.
+  Future<List<String>> getIntersectingRouteRefs({required double fromLat, required double fromLon, required double toLat, required double toLon, String? networkOrOperator}) async {
+    try {
+      final a = await getBusRouteRefsNear(fromLat, fromLon, networkOrOperator: networkOrOperator);
+      final b = await getBusRouteRefsNear(toLat, toLon, networkOrOperator: networkOrOperator);
+      final inter = a.intersection(b).toList()..sort();
+      return inter.take(8).toList();
+    } catch (e) {
+      debugPrint('Overpass intersect route refs error: $e');
+      return [];
+    }
+  }
 }

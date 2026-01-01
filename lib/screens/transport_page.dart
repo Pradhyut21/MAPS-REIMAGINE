@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:wayfinder/theme.dart';
 import 'package:wayfinder/services/location_service.dart';
 import 'package:wayfinder/screens/home_page.dart';
@@ -10,6 +9,9 @@ import 'package:wayfinder/widgets/app_background.dart';
 import 'package:wayfinder/widgets/live_image_header.dart';
 import 'package:wayfinder/services/overpass_service.dart';
 import 'package:wayfinder/nav.dart';
+import 'package:wayfinder/services/bus_info_service.dart';
+import 'package:wayfinder/models/bus_route_info.dart';
+import 'package:wayfinder/services/city_transit_registry.dart';
 
 class TransportPage extends StatefulWidget {
   final String? destination;
@@ -42,6 +44,13 @@ class _TransportPageState extends State<TransportPage> {
   MapSuggestion? _selectedTo;
   List<BusPlatform> _platforms = [];
   BusPlatform? _suggestedStand;
+  // Next bus info (AI-backed)
+  final BusInfoService _busInfoService = BusInfoService();
+  BusRouteInfo? _routeInfo;
+  bool _routeInfoLoading = false;
+  String? _routeInfoError;
+  CityTransitContext? _city;
+  List<String> _candidateRouteRefs = [];
 
   @override
   void initState() {
@@ -154,142 +163,212 @@ class _TransportPageState extends State<TransportPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => context.pop(),
-        ),
-        title: Text(
-          'Bus',
-          style: context.textStyles.titleLarge?.copyWith(color: Colors.white),
-        ),
-      ),
       body: AppGradientBackground(
-        child: SingleChildScrollView(
-        padding: AppSpacing.paddingMd,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            LiveImageHeader(images: const [
-              'assets/images/Modern_bus_station_platform_blue_1767253932524.jpg',
-              'assets/images/Airport_terminal_modern_architecture_gray_1767253937220.jpg',
-              'assets/images/Urban_map_aerial_city_blocks_black_1767253938714.jpg',
-            ], height: 160),
-            SizedBox(height: AppSpacing.md),
-            Text(
-              'Bus / Route Helper',
-              style: context.textStyles.headlineSmall?.copyWith(color: Colors.white),
+        child: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              backgroundColor: Colors.transparent,
+              pinned: false,
+              leading: IconButton(
+                icon: Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => context.pop(),
+              ),
+              title: Text('Bus', style: context.textStyles.titleLarge?.copyWith(color: Colors.white)),
             ),
-            SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Icon(Icons.location_on, color: AppColors.golden, size: 16),
-                SizedBox(width: AppSpacing.xs),
-                Text(
-                  '${_userLat?.toStringAsFixed(4)}, ${_userLon?.toStringAsFixed(4)}',
-                  style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray),
-                ),
-              ],
-            ),
-            SizedBox(height: AppSpacing.xl),
-            Container(
-              padding: AppSpacing.paddingLg,
-              decoration: BoxDecoration(color: AppColors.brownCard, borderRadius: BorderRadius.circular(AppRadius.md)),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Enter from and to locations to see map directions (can be used like KSRTC route helper).', style: context.textStyles.bodyMedium?.copyWith(color: AppColors.lightGray)),
-                SizedBox(height: AppSpacing.lg),
-                // From chip / input
-                _RouteChipField(
-                  label: 'From',
-                  controller: _fromController,
-                  focusNode: _fromFocus,
-                  searching: _searchingFrom,
-                  suggestions: _fromSuggestions,
-                  onChanged: _queryFrom,
-                  onSelect: (s) {
-                    setState(() {
-                      _fromController.text = s.title;
-                      _fromSuggestions = [];
-                      _selectedFrom = s;
-                    });
-                    _loadSuggestedStand(s.lat, s.lon);
-                    _toFocus.requestFocus();
-                  },
-                ),
-                SizedBox(height: AppSpacing.md),
-                _RouteChipField(
-                  label: 'To',
-                  controller: _toController,
-                  focusNode: _toFocus,
-                  searching: _searchingTo,
-                  suggestions: _toSuggestions,
-                  onChanged: _queryTo,
-                  onSelect: (s) {
-                    setState(() {
-                      _toController.text = s.title;
-                      _toSuggestions = [];
-                      _selectedTo = s;
-                    });
-                    FocusScope.of(context).unfocus();
-                  },
-                ),
-                if (_suggestedStand != null) ...[
-                  SizedBox(height: AppSpacing.xs),
-                  Text('Suggested stand: ${_suggestedStand!.name}', style: context.textStyles.labelSmall?.copyWith(color: AppColors.lightGray)),
-                ],
-                SizedBox(height: AppSpacing.lg),
-                SizedBox(width: double.infinity, child: ElevatedButton(
-                  onPressed: _showRoute,
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.golden, padding: EdgeInsets.symmetric(vertical: AppSpacing.md), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md))),
-                  child: Text('Show Route', style: context.textStyles.titleMedium?.copyWith(color: Colors.black, fontWeight: FontWeight.bold)),
-                )),
-                SizedBox(height: AppSpacing.md),
-                if (_selectedFrom != null && _selectedTo != null) ...[
-                  _RouteSteps(
-                    from: _selectedFrom!,
-                    to: _selectedTo!,
-                    suggestedStand: _suggestedStand?.name,
-                  ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: AppSpacing.paddingMd,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  LiveImageHeader(images: const [
+                    'assets/images/Modern_bus_station_platform_blue_1767253932524.jpg',
+                    'assets/images/Airport_terminal_modern_architecture_gray_1767253937220.jpg',
+                    'assets/images/Urban_map_aerial_city_blocks_black_1767253938714.jpg',
+                  ], height: 160),
                   SizedBox(height: AppSpacing.md),
-                ],
-                if (_selectedTo != null) SizedBox(width: double.infinity, child: ElevatedButton.icon(
-                  onPressed: () {
-                    final t = Uri.encodeComponent(_selectedTo!.title);
-                    context.push('${AppRoutes.map}?lat=${_selectedTo!.lat}&lon=${_selectedTo!.lon}&title=$t&autoroute=true');
-                  },
-                  icon: Icon(Icons.navigation, color: Colors.black),
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.golden, padding: EdgeInsets.symmetric(vertical: AppSpacing.md), shape: StadiumBorder()),
-                  label: Text('Open Directions in Map', style: context.textStyles.titleSmall?.copyWith(color: Colors.black, fontWeight: FontWeight.w600)),
-                )),
-              ]),
-            ),
-            if (_platforms.isNotEmpty) ...[
-              SizedBox(height: AppSpacing.lg),
-              Text('Platforms near destination', style: context.textStyles.titleMedium?.copyWith(color: Colors.white)),
-              SizedBox(height: AppSpacing.sm),
-              ..._platforms.take(6).map((p) => Container(
-                    margin: EdgeInsets.only(bottom: AppSpacing.sm),
-                    padding: AppSpacing.paddingSm,
-                    decoration: BoxDecoration(color: AppColors.darkBrown, borderRadius: BorderRadius.circular(AppRadius.sm)),
-                    child: Row(children: [
-                      Icon(Icons.directions_bus, color: AppColors.golden),
-                      SizedBox(width: AppSpacing.md),
-                      Expanded(child: Text('${p.name}${p.ref != null ? ' (${p.ref})' : ''}', style: context.textStyles.bodyMedium?.copyWith(color: Colors.white))),
+                  Text('Bus / Route Helper', style: context.textStyles.headlineSmall?.copyWith(color: Colors.white)),
+                  SizedBox(height: AppSpacing.md),
+                  Row(children: [
+                    Icon(Icons.location_on, color: AppColors.golden, size: 16),
+                    SizedBox(width: AppSpacing.xs),
+                    Text('${_userLat?.toStringAsFixed(4)}, ${_userLon?.toStringAsFixed(4)}', style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray)),
+                  ]),
+                  SizedBox(height: AppSpacing.xl),
+                  Container(
+                    padding: AppSpacing.paddingLg,
+                    decoration: BoxDecoration(color: AppColors.brownCard, borderRadius: BorderRadius.circular(AppRadius.md)),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Enter from and to locations to see map directions (can be used like KSRTC route helper).', style: context.textStyles.bodyMedium?.copyWith(color: AppColors.lightGray)),
+                      SizedBox(height: AppSpacing.lg),
+                      _RouteChipField(
+                        label: 'From',
+                        hint: 'From (e.g., Mysuru)',
+                        controller: _fromController,
+                        focusNode: _fromFocus,
+                        searching: _searchingFrom,
+                        suggestions: _fromSuggestions,
+                        onChanged: _queryFrom,
+                        onSelect: (s) {
+                          setState(() {
+                            _fromController.text = s.title;
+                            _fromSuggestions = [];
+                            _selectedFrom = s;
+                          });
+                          _loadSuggestedStand(s.lat, s.lon);
+                          _toFocus.requestFocus();
+                        },
+                      ),
+                      SizedBox(height: AppSpacing.md),
+                      _RouteChipField(
+                        label: 'To',
+                        hint: 'To (e.g., Bengaluru or Hyderabad)',
+                        controller: _toController,
+                        focusNode: _toFocus,
+                        searching: _searchingTo,
+                        suggestions: _toSuggestions,
+                        onChanged: _queryTo,
+                        onSelect: (s) {
+                          setState(() {
+                            _toController.text = s.title;
+                            _toSuggestions = [];
+                            _selectedTo = s;
+                          });
+                          // Prefetch platforms near destination and fetch next bus info
+                          _loadPlatforms(s.lat, s.lon);
+                          _fetchRouteInfo();
+                          FocusScope.of(context).unfocus();
+                        },
+                      ),
+                      SizedBox(height: AppSpacing.xs),
+                      Text(
+                        'Examples: Mysuru → Bengaluru, Bengaluru → Hyderabad',
+                        style: context.textStyles.labelSmall?.copyWith(color: AppColors.lightGray),
+                      ),
+                      if (_suggestedStand != null) ...[
+                        SizedBox(height: AppSpacing.xs),
+                        Text('Suggested stand: ${_suggestedStand!.name}', style: context.textStyles.labelSmall?.copyWith(color: AppColors.lightGray)),
+                      ],
+                      SizedBox(height: AppSpacing.lg),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _showRoute,
+                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.golden, padding: EdgeInsets.symmetric(vertical: AppSpacing.md), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md))),
+                          child: Text('Show Route', style: context.textStyles.titleMedium?.copyWith(color: Colors.black, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                      SizedBox(height: AppSpacing.md),
+                      if (_selectedFrom != null && _selectedTo != null)
+                        _NextBusPanel(
+                          loading: _routeInfoLoading,
+                          error: _routeInfoError,
+                          info: _routeInfo,
+                          onRetry: _fetchRouteInfo,
+                        ),
+                      if (_selectedTo != null)
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              final t = Uri.encodeComponent(_selectedTo!.title);
+                              final toParams = 'lat=${_selectedTo!.lat}&lon=${_selectedTo!.lon}&title=$t&autoroute=true';
+                              if (_selectedFrom != null) {
+                                context.push('${AppRoutes.map}?$toParams&fromLat=${_selectedFrom!.lat}&fromLon=${_selectedFrom!.lon}');
+                              } else {
+                                context.push('${AppRoutes.map}?$toParams');
+                              }
+                            },
+                            icon: Icon(Icons.navigation, color: Colors.black),
+                            style: ElevatedButton.styleFrom(backgroundColor: AppColors.golden, padding: EdgeInsets.symmetric(vertical: AppSpacing.md), shape: StadiumBorder()),
+                            label: Text(_selectedFrom != null ? 'Open Directions (From → To) in Map' : 'Open Directions in Map', style: context.textStyles.titleSmall?.copyWith(color: Colors.black, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
                     ]),
-                  )),
-            ],
+                  ),
+                  if (_platforms.isNotEmpty) ...[
+                    SizedBox(height: AppSpacing.lg),
+                    Text('Platforms near destination', style: context.textStyles.titleMedium?.copyWith(color: Colors.white)),
+                    SizedBox(height: AppSpacing.sm),
+                    ..._platforms.take(6).map((p) => Container(
+                          margin: EdgeInsets.only(bottom: AppSpacing.sm),
+                          padding: AppSpacing.paddingSm,
+                          decoration: BoxDecoration(color: AppColors.darkBrown, borderRadius: BorderRadius.circular(AppRadius.sm)),
+                          child: Row(children: [
+                            Icon(Icons.directions_bus, color: AppColors.golden),
+                            SizedBox(width: AppSpacing.md),
+                            Expanded(child: Text('${p.name}${p.ref != null ? ' (${p.ref})' : ''}', style: context.textStyles.bodyMedium?.copyWith(color: Colors.white))),
+                          ]),
+                        )),
+                  ],
+                  SizedBox(height: AppSpacing.lg),
+                ]),
+              ),
+            ),
           ],
         ),
       ),
-      ),
       bottomNavigationBar: BottomNavBar(currentIndex: 4),
     );
+  }
+
+  Future<void> _fetchRouteInfo() async {
+    if (_selectedFrom == null || _selectedTo == null) return;
+    setState(() {
+      _routeInfoLoading = true;
+      _routeInfoError = null;
+      _routeInfo = null;
+    });
+    try {
+      // Detect city context (prefer when both points are inside same known city, else use destination city)
+      final fromCity = CityTransitRegistry.detect(_selectedFrom!.lat, _selectedFrom!.lon);
+      final toCity = CityTransitRegistry.detect(_selectedTo!.lat, _selectedTo!.lon);
+      CityTransitContext? city;
+      if (fromCity != null && toCity != null && fromCity.cityName == toCity.cityName) {
+        city = toCity;
+      } else {
+        city = toCity ?? fromCity;
+      }
+      setState(() => _city = city);
+
+      // Suggest candidate route numbers using Overpass based on local network/operator
+      List<String> candidateRefs = [];
+      if (city != null) {
+        final refs = await _overpass.getIntersectingRouteRefs(
+          fromLat: _selectedFrom!.lat,
+          fromLon: _selectedFrom!.lon,
+          toLat: _selectedTo!.lat,
+          toLon: _selectedTo!.lon,
+          networkOrOperator: city.osmNetworkTag ?? city.operatorName,
+        );
+        candidateRefs = refs;
+      }
+      setState(() => _candidateRouteRefs = candidateRefs);
+
+      final info = await _busInfoService.fetchRouteInfo(
+        fromTitle: _selectedFrom!.title,
+        fromLat: _selectedFrom!.lat,
+        fromLon: _selectedFrom!.lon,
+        toTitle: _selectedTo!.title,
+        toLat: _selectedTo!.lat,
+        toLon: _selectedTo!.lon,
+        destinationPlatforms: _platforms.take(8).map((p) => {'name': p.name, 'ref': p.ref}).toList(),
+        city: city,
+        candidateRouteRefs: candidateRefs,
+      );
+      if (!mounted) return;
+      setState(() => _routeInfo = info);
+    } catch (e) {
+      debugPrint('Fetch next bus info failed: $e');
+      if (!mounted) return;
+      setState(() => _routeInfoError = 'Could not fetch details right now');
+    } finally {
+      if (mounted) setState(() => _routeInfoLoading = false);
+    }
   }
 }
 
 class _RouteChipField extends StatelessWidget {
   final String label;
+  final String? hint;
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool searching;
@@ -297,7 +376,7 @@ class _RouteChipField extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final ValueChanged<MapSuggestion> onSelect;
 
-  const _RouteChipField({required this.label, required this.controller, required this.focusNode, required this.searching, required this.suggestions, required this.onChanged, required this.onSelect});
+  const _RouteChipField({required this.label, this.hint, required this.controller, required this.focusNode, required this.searching, required this.suggestions, required this.onChanged, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
@@ -305,25 +384,30 @@ class _RouteChipField extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
       decoration: BoxDecoration(color: AppColors.darkBrown, borderRadius: BorderRadius.circular(AppRadius.md)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (controller.text.isNotEmpty)
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(28), border: Border.all(color: Colors.white.withValues(alpha: 0.1))),
-            child: Row(children: [
-              Icon(Icons.place, color: Colors.white70, size: 18),
-              SizedBox(width: AppSpacing.sm),
-              Expanded(child: Text(controller.text, style: context.textStyles.bodyMedium?.copyWith(color: Colors.white), overflow: TextOverflow.ellipsis)),
-              GestureDetector(onTap: () { controller.clear(); focusNode.requestFocus(); }, child: Icon(Icons.close, color: Colors.white70, size: 18)),
-            ]),
-          )
-        else
-          TextField(
-            controller: controller,
-            focusNode: focusNode,
-            onChanged: onChanged,
-            decoration: InputDecoration(hintText: '$label (e.g., Mysore)', border: InputBorder.none, hintStyle: context.textStyles.bodyMedium?.copyWith(color: AppColors.lightGray)),
-            style: context.textStyles.bodyMedium?.copyWith(color: Colors.white),
+        // Always keep an editable TextField so typing doesn't get replaced by a chip
+        TextField(
+          controller: controller,
+          focusNode: focusNode,
+          onChanged: onChanged,
+          decoration: InputDecoration(
+            border: InputBorder.none,
+            hintText: hint ?? '$label (e.g., Mysuru)',
+            hintStyle: context.textStyles.bodyMedium?.copyWith(color: AppColors.lightGray),
+            prefixIcon: Icon(Icons.place, color: Colors.white70, size: 18),
+            suffixIcon: controller.text.isNotEmpty
+                ? IconButton(
+                    icon: Icon(Icons.close, color: Colors.white70, size: 18),
+                    onPressed: () {
+                      controller.clear();
+                      // Clear suggestions immediately and keep focus for continued typing
+                      onChanged('');
+                      focusNode.requestFocus();
+                    },
+                  )
+                : null,
           ),
+          style: context.textStyles.bodyMedium?.copyWith(color: Colors.white),
+        ),
         if (searching) LinearProgressIndicator(minHeight: 2, color: AppColors.golden),
         if (suggestions.isNotEmpty && focusNode.hasFocus)
           Container(
@@ -349,26 +433,69 @@ class _RouteChipField extends StatelessWidget {
   }
 }
 
-class _RouteSteps extends StatelessWidget {
-  final MapSuggestion from;
-  final MapSuggestion to;
-  final String? suggestedStand;
-
-  const _RouteSteps({required this.from, required this.to, this.suggestedStand});
+class _NextBusPanel extends StatelessWidget {
+  final bool loading;
+  final String? error;
+  final BusRouteInfo? info;
+  final VoidCallback onRetry;
+  const _NextBusPanel({required this.loading, required this.error, required this.info, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _stepText(context, 1, 'Choose your route: From: ${from.title} → To: ${to.title}'),
-      _stepText(context, 2, 'Go to the bus stand: From ${from.title}, go to: ${suggestedStand ?? 'nearest city bus stand'}.'),
-      _stepText(context, 3, 'Platform / Bay details: Ask at the enquiry counter for the platform/bay towards ${to.title}. Platform numbers can change.'),
-      _stepText(context, 4, 'Ticket + boarding: Operator may be KSRTC / State RTC / Private. Take a ticket (or show booking) and board. Reach 20–30 minutes early for platform confirmation.'),
-      _stepText(context, 5, 'Arrival: Get down at ${to.title} and follow local sign boards to reach your exact spot.'),
-    ]);
+    return Container(
+      padding: AppSpacing.paddingLg,
+      decoration: BoxDecoration(color: AppColors.brownCard, borderRadius: BorderRadius.circular(AppRadius.md)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.schedule, color: AppColors.golden),
+          SizedBox(width: AppSpacing.sm),
+          Text('Next bus & platform', style: context.textStyles.titleMedium?.copyWith(color: Colors.white)),
+          Spacer(),
+          IconButton(
+            onPressed: loading ? null : onRetry,
+            icon: Icon(Icons.refresh, color: Colors.white),
+            tooltip: 'Refresh',
+          ),
+        ]),
+        SizedBox(height: AppSpacing.sm),
+        if (loading)
+          Row(children: [
+            SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.golden)),
+            SizedBox(width: AppSpacing.sm),
+            Text('Fetching next bus and platform...', style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray)),
+          ])
+        else if (error != null)
+          Text(error!, style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray))
+        else if (info != null) ...[
+          _row(context, Icons.departure_board, 'Next bus', info!.nextDepartureLocal),
+          SizedBox(height: 6),
+          _row(context, Icons.directions_bus, 'Operator', info!.operatorName + (info!.routeNumber.isNotEmpty ? ' · ${info!.routeNumber}' : '')),
+          SizedBox(height: 6),
+          _row(context, Icons.signpost, 'Platform', info!.platformHint),
+          if (info!.durationMinutes != null) ...[
+            SizedBox(height: 6),
+            _row(context, Icons.timer, 'Duration', '${info!.durationMinutes} min'),
+          ],
+          if ((info!.fareEstimate ?? '').isNotEmpty) ...[
+            SizedBox(height: 6),
+            _row(context, Icons.payments, 'Fare', info!.fareEstimate!),
+          ],
+          SizedBox(height: 6),
+          _row(context, Icons.update, 'Frequency', info!.frequency),
+          SizedBox(height: AppSpacing.sm),
+          Text(info!.destinationDetails, style: context.textStyles.bodySmall?.copyWith(color: Colors.white)),
+          SizedBox(height: AppSpacing.xs),
+          Text(info!.notes, style: context.textStyles.labelSmall?.copyWith(color: AppColors.lightGray)),
+        ]
+        else
+          Text('Select From and To to see next bus info.', style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray)),
+      ]),
+    );
   }
 
-  Widget _stepText(BuildContext context, int step, String text) => Padding(
-        padding: EdgeInsets.only(bottom: AppSpacing.sm),
-        child: Text('Step $step: $text', style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray)),
-      );
+  Widget _row(BuildContext context, IconData icon, String label, String value) => Row(children: [
+        Icon(icon, color: AppColors.golden, size: 18),
+        SizedBox(width: AppSpacing.sm),
+        Expanded(child: Text('$label: $value', style: context.textStyles.bodyMedium?.copyWith(color: Colors.white))),
+      ]);
 }

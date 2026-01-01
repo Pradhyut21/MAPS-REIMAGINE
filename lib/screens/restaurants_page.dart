@@ -110,134 +110,106 @@ class _RestaurantsPageState extends State<RestaurantsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => context.pop(),
-        ),
-        title: Text(
-          'Eat',
-          style: context.textStyles.titleLarge?.copyWith(color: Colors.white),
-        ),
-        actions: [
-          TextButton.icon(
-            icon: Icon(Icons.refresh, color: AppColors.golden),
-            label: Text('Refresh', style: TextStyle(color: AppColors.golden)),
-            onPressed: _loadData,
-          ),
-        ],
-      ),
       body: AppGradientBackground(
-        child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, 0),
-            child: LiveImageHeader(images: const [
-              'assets/images/Cozy_cafe_interior_brown_1767253936244.jpg',
-              'assets/images/Street_food_market_crowd_orange_1767253931477.jpg',
-              'assets/images/City_skyline_at_night_blue_1767253930156.jpg',
-            ], height: 160),
-          ),
-          Padding(
-            padding: AppSpacing.paddingMd,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Restaurants near you (live location). No default list.',
-                  style: context.textStyles.bodyMedium?.copyWith(color: AppColors.lightGray),
-                ),
-                SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    Icon(Icons.location_on, color: AppColors.golden, size: 16),
-                    SizedBox(width: AppSpacing.xs),
-                    Text(
-                      '${_userLat?.toStringAsFixed(4)}, ${_userLon?.toStringAsFixed(4)}',
-                      style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray),
+        child: _isLoading
+            ? Center(child: CircularProgressIndicator(color: AppColors.golden))
+            : CustomScrollView(
+                slivers: [
+                  SliverAppBar(
+                    backgroundColor: Colors.transparent,
+                    pinned: false,
+                    leading: IconButton(
+                      icon: Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => context.pop(),
                     ),
-                  ],
-                ),
-                SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.searchBar,
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                        ),
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: _filterRestaurants,
-                          decoration: InputDecoration(
-                            hintText: 'Search food (e.g., biryani, dosa, cafe)',
-                            border: InputBorder.none,
-                            icon: Icon(Icons.search, color: Colors.white70),
-                            hintStyle: context.textStyles.bodyMedium?.copyWith(color: Colors.white70),
+                    title: Text('Eat', style: context.textStyles.titleLarge?.copyWith(color: Colors.white)),
+                    actions: [
+                      TextButton.icon(
+                        icon: Icon(Icons.refresh, color: AppColors.golden),
+                        label: Text('Refresh', style: TextStyle(color: AppColors.golden)),
+                        onPressed: _loadData,
+                      ),
+                    ],
+                  ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, 0),
+                      child: LiveImageHeader(images: const [
+                        'assets/images/Cozy_cafe_interior_brown_1767253936244.jpg',
+                        'assets/images/Street_food_market_crowd_orange_1767253931477.jpg',
+                        'assets/images/City_skyline_at_night_blue_1767253930156.jpg',
+                      ], height: 160),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: AppSpacing.paddingMd,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Restaurants near you (live location). No default list.', style: context.textStyles.bodyMedium?.copyWith(color: AppColors.lightGray)),
+                        SizedBox(height: AppSpacing.md),
+                        Row(children: [
+                          Icon(Icons.location_on, color: AppColors.golden, size: 16),
+                          SizedBox(width: AppSpacing.xs),
+                          Text('${_userLat?.toStringAsFixed(4)}, ${_userLon?.toStringAsFixed(4)}', style: context.textStyles.bodySmall?.copyWith(color: AppColors.lightGray)),
+                        ]),
+                        SizedBox(height: AppSpacing.md),
+                        Row(children: [
+                          Expanded(
+                            child: Container(
+                              padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 4),
+                              decoration: BoxDecoration(color: AppColors.searchBar, borderRadius: BorderRadius.circular(AppRadius.md)),
+                              child: TextField(
+                                controller: _searchController,
+                                onChanged: _filterRestaurants,
+                                decoration: InputDecoration(hintText: 'Search food (e.g., biryani, dosa, cafe)', border: InputBorder.none, icon: Icon(Icons.search, color: Colors.white70), hintStyle: context.textStyles.bodyMedium?.copyWith(color: Colors.white70)),
+                                style: context.textStyles.bodyMedium?.copyWith(color: Colors.white),
+                              ),
+                            ),
                           ),
-                          style: context.textStyles.bodyMedium?.copyWith(color: Colors.white),
-                        ),
-                      ),
+                          SizedBox(width: AppSpacing.md),
+                          Container(
+                            padding: EdgeInsets.all(AppSpacing.sm + 4),
+                            decoration: BoxDecoration(color: AppColors.golden, borderRadius: BorderRadius.circular(AppRadius.md)),
+                            child: Text('Search', style: context.textStyles.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                          ),
+                        ]),
+                      ]),
                     ),
-                    SizedBox(width: AppSpacing.md),
-                    Container(
-                      padding: EdgeInsets.all(AppSpacing.sm + 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.golden,
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                      ),
-                      child: Text('Search', style: context.textStyles.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? Center(child: CircularProgressIndicator(color: AppColors.golden))
-                : _filteredRestaurants.isEmpty
-                    ? Center(
-                        child: Text(
-                          'No restaurants found',
-                          style: context.textStyles.bodyLarge?.copyWith(color: AppColors.lightGray),
-                        ),
-                      )
-                     : ListView.builder(
-                        padding: AppSpacing.paddingMd,
+                  ),
+                  if (_filteredRestaurants.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: Text('No restaurants found', style: context.textStyles.bodyLarge?.copyWith(color: AppColors.lightGray))),
+                    )
+                  else
+                    SliverPadding(
+                      padding: AppSpacing.paddingMd,
+                      sliver: SliverList.builder(
                         itemCount: _filteredRestaurants.length,
                         itemBuilder: (context, index) {
                           final restaurant = _filteredRestaurants[index];
-                          final distance = _userLat != null && _userLon != null
-                              ? restaurant.distanceFrom(_userLat!, _userLon!)
-                              : 0.0;
-                           return Dismissible(
-                             key: ValueKey('rest_${restaurant.id}'),
-                             direction: DismissDirection.endToStart,
-                             background: Container(
-                               alignment: Alignment.centerRight,
-                               padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                               color: AppColors.golden,
-                               child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [Icon(Icons.bookmark_add, color: Colors.black), SizedBox(width: 8), Text('Save', style: TextStyle(color: Colors.black))]),
-                             ),
-                             confirmDismiss: (_) async {
-                               await _savePlace(restaurant);
-                               return false; // keep the item
-                             },
-                             child: RestaurantCard(
-                               restaurant: restaurant,
-                               distance: distance,
-                             ),
-                           );
+                          final distance = _userLat != null && _userLon != null ? restaurant.distanceFrom(_userLat!, _userLon!) : 0.0;
+                          return Dismissible(
+                            key: ValueKey('rest_${restaurant.id}'),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                              color: AppColors.golden,
+                              child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [Icon(Icons.bookmark_add, color: Colors.black), SizedBox(width: 8), Text('Save', style: TextStyle(color: Colors.black))]),
+                            ),
+                            confirmDismiss: (_) async {
+                              await _savePlace(restaurant);
+                              return false;
+                            },
+                            child: RestaurantCard(restaurant: restaurant, distance: distance),
+                          );
                         },
                       ),
-          ),
-        ],
-      )),
+                    ),
+                ],
+              ),
+      ),
       bottomNavigationBar: BottomNavBar(currentIndex: 2),
     );
   }

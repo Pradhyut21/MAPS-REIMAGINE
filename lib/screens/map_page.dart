@@ -27,8 +27,10 @@ class MapPage extends StatefulWidget {
   final double? initialTargetLon;
   final String? initialTargetTitle;
   final bool autoRoute;
+  final double? initialOriginLat;
+  final double? initialOriginLon;
 
-  const MapPage({super.key, this.initialTargetLat, this.initialTargetLon, this.initialTargetTitle, this.autoRoute = false});
+  const MapPage({super.key, this.initialTargetLat, this.initialTargetLon, this.initialTargetTitle, this.autoRoute = false, this.initialOriginLat, this.initialOriginLon});
 
   @override
   State<MapPage> createState() => _MapPageState();
@@ -64,11 +66,23 @@ class _MapPageState extends State<MapPage> {
   List<Place> _nearby = [];
   List<SearchHistory> _recent = [];
   bool _smartSuggestionsEnabled = true;
+  bool _muted = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeLocation();
+    // If an explicit origin is provided (e.g., from Transport page), use it instead of device location
+    if (widget.initialOriginLat != null && widget.initialOriginLon != null) {
+      _initialPosition = LatLng(widget.initialOriginLat!, widget.initialOriginLon!);
+      _isLoading = false;
+      try {
+        _mapController.move(_initialPosition, _zoom);
+      } catch (e) {
+        debugPrint('Map move to provided origin failed: $e');
+      }
+    } else {
+      _initializeLocation();
+    }
     _loadRecentSearches();
     // If launched with a destination, set it up
     if (widget.initialTargetLat != null && widget.initialTargetLon != null) {
@@ -106,7 +120,7 @@ class _MapPageState extends State<MapPage> {
     });
     // Announce navigation start with TTS (female voice preference configured in VoiceService)
     try {
-      if (res != null) {
+      if (res != null && !_muted) {
         if (!_voiceService.isInitialized) {
           await _voiceService.initialize();
         }
@@ -410,15 +424,21 @@ class _MapPageState extends State<MapPage> {
       await _voiceService.stopListening();
       return;
     }
-    await _voiceService.speak('Listening. Say a place or address');
+    if (!_muted) {
+      await _voiceService.speak('Listening. Say a place or address');
+    }
     await _voiceService.startListening(onResult: (text) async {
       if (!mounted) return;
       setState(() => _searchController.text = text);
-      await _voiceService.speak('Searching for $text');
+      if (!_muted) {
+        await _voiceService.speak('Searching for $text');
+      }
       await _runAutocomplete(text);
       if (_suggestions.isNotEmpty) {
         await _selectSuggestion(_suggestions.first);
-        await _voiceService.speak('Showing ${_suggestions.first.title}');
+        if (!_muted) {
+          await _voiceService.speak('Showing ${_suggestions.first.title}');
+        }
       }
     });
   }
@@ -603,6 +623,24 @@ class _MapPageState extends State<MapPage> {
                         child: IconButton(
                           icon: Icon(Icons.share_location, color: Theme.of(context).colorScheme.onSurface),
                           onPressed: _shareMyLocation,
+                        ),
+                      ),
+                      SizedBox(width: AppSpacing.sm),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)),
+                        ),
+                        child: IconButton(
+                          icon: Icon(_muted ? Icons.volume_off : Icons.volume_up, color: Theme.of(context).colorScheme.onSurface),
+                          tooltip: _muted ? 'Unmute voice' : 'Mute voice',
+                          onPressed: () {
+                            setState(() => _muted = !_muted);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(_muted ? 'Map voice muted' : 'Map voice unmuted')),
+                            );
+                          },
                         ),
                       ),
                     ],

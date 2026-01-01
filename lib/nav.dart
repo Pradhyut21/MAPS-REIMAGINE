@@ -49,11 +49,15 @@ class AppRouter {
           final lon = double.tryParse(qp['lon'] ?? '');
           final title = qp['title'];
           final auto = (qp['autoroute'] ?? 'false').toLowerCase() == 'true';
+          final fromLat = double.tryParse(qp['fromLat'] ?? '');
+          final fromLon = double.tryParse(qp['fromLon'] ?? '');
           return _transitionPage(MapPage(
             initialTargetLat: lat,
             initialTargetLon: lon,
             initialTargetTitle: title,
             autoRoute: auto,
+            initialOriginLat: fromLat,
+            initialOriginLon: fromLon,
           ));
         },
       ),
